@@ -191,14 +191,16 @@
       return new XMLSerializer().serializeToString(doc);
     }
 
-    function patchDocumentXml(documentXml){
+        function patchDocumentXml(documentXml){
       const W_NS = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
       const parser = new DOMParser();
       const doc = parser.parseFromString(documentXml, 'application/xml');
       if(doc.getElementsByTagName('parsererror').length) return documentXml;
 
       const ensureChild = (parent, localName, insertFirst=false) => {
-        const found = Array.from(parent.childNodes).find(n => n.nodeType===1 && n.namespaceURI===W_NS && n.localName===localName);
+        const found = Array.from(parent.childNodes).find(
+          n => n.nodeType===1 && n.namespaceURI===W_NS && n.localName===localName
+        );
         if(found) return found;
         const el = doc.createElementNS(W_NS, 'w:' + localName);
         if(insertFirst && parent.firstChild){
@@ -209,6 +211,7 @@
         return el;
       };
 
+      // === 1) 段落：表格内段落 0/0 + 单倍 + 居中 ===
       const setSpacingAndCenter = (p) => {
         const pPr = ensureChild(p, 'pPr', true);
         const spacing = ensureChild(pPr, 'spacing');
@@ -221,9 +224,30 @@
         jc.setAttributeNS(W_NS, 'w:val', 'center');
       };
 
-      // ✅ 只改表格内的段落（w:tbl 下所有 w:p）
+      // === 2) 表格：强制与页面同宽（100%）+ 固定布局 ===
+      const forceTableFullWidth = (tbl) => {
+        const tblPr = ensureChild(tbl, 'tblPr', true);
+
+        // tblW: 100% = 5000（pct单位为 1/50 百分比）
+        const tblW = ensureChild(tblPr, 'tblW');
+        tblW.setAttributeNS(W_NS, 'w:type', 'pct');
+        tblW.setAttributeNS(W_NS, 'w:w', '5000');
+
+        // 固定布局，避免按内容自动收缩导致不铺满
+        const layout = ensureChild(tblPr, 'tblLayout');
+        layout.setAttributeNS(W_NS, 'w:type', 'fixed');
+
+        // 取消表格缩进，避免偏窄
+        const tblInd = ensureChild(tblPr, 'tblInd');
+        tblInd.setAttributeNS(W_NS, 'w:w', '0');
+        tblInd.setAttributeNS(W_NS, 'w:type', 'dxa');
+      };
+
+      // ✅ 只处理表格（w:tbl）
       const tbls = Array.from(doc.getElementsByTagNameNS(W_NS, 'tbl'));
       tbls.forEach(tbl=>{
+        forceTableFullWidth(tbl);
+
         const ps = Array.from(tbl.getElementsByTagNameNS(W_NS, 'p'));
         ps.forEach(setSpacingAndCenter);
       });
